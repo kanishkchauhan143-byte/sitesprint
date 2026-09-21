@@ -4,8 +4,6 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { validateContactForm, ContactFormData, ValidationErrors } from '@/lib/validation';
 import { BUSINESS_TYPES, SERVICE_NEEDS } from '@/lib/content';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Send, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 interface ContactFormProps {
@@ -43,33 +41,70 @@ export const ContactForm: React.FC<ContactFormProps> = ({ onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[ContactForm] Stage 1: Form submit event triggered. Form data:', formData);
     setSubmitStatus(null);
+    setErrors({});
 
     const validationErrors = validateContactForm(formData);
     if (Object.keys(validationErrors).length > 0) {
+      console.warn('[ContactForm] Stage 2: Client-side validation failed with errors:', validationErrors);
       setErrors(validationErrors);
       return;
     }
+    console.log('[ContactForm] Stage 2: Client-side validation passed.');
 
     setIsSubmitting(true);
+    console.log('[ContactForm] Stage 3: Setting isSubmitting to true.');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.warn('[ContactForm] AbortController timed out after 15s');
+      controller.abort();
+    }, 15000);
 
     try {
-      // Save directly to Cloud Firestore 'inquiries' collection
-      await addDoc(collection(db, 'inquiries'), {
-        fullName: formData.name.trim(),
-        businessName: formData.businessName.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone?.trim() || '',
-        businessType: formData.businessType,
-        projectType: formData.need,
-        websiteUrl: formData.websiteUrl?.trim() || '',
-        message: formData.message?.trim() || '',
-        createdAt: serverTimestamp(),
+      console.log('[ContactForm] Stage 4: Dispatching fetch POST request to /api/contact...');
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+      console.log('[ContactForm] Stage 5: Received response from /api/contact. HTTP status:', response.status, response.statusText);
+
+      let result: { success?: boolean; message?: string; errors?: ValidationErrors } = {};
+      try {
+        result = await response.json();
+        console.log('[ContactForm] Stage 6: Successfully parsed response JSON:', result);
+      } catch (jsonErr) {
+        console.error('[ContactForm] Stage 6: Failed to parse JSON response:', jsonErr);
+        throw new Error(`Server returned HTTP ${response.status} with invalid JSON`);
+      }
+
+      if (!response.ok || !result.success) {
+        console.warn('[ContactForm] Stage 7: Submission rejected by API:', result);
+        if (result.errors) {
+          setErrors(result.errors);
+        }
+        setSubmitStatus({
+          success: false,
+          message:
+            result.message ||
+            'Something went wrong while submitting. Please try again or email us directly at team.sitesprint@gmail.com',
+        });
+        return;
+      }
+
+      console.log('[ContactForm] Stage 7: Submission succeeded! Updating UI and resetting form.');
       setSubmitStatus({
         success: true,
-        message: "Thanks — we've received your project details and will be in touch soon!",
+        message:
+          result.message ||
+          "Thanks — we've received your project details and will be in touch soon!",
       });
 
       setFormData({
@@ -86,13 +121,21 @@ export const ContactForm: React.FC<ContactFormProps> = ({ onSuccess }) => {
       if (onSuccess) {
         setTimeout(onSuccess, 2200);
       }
-    } catch (error) {
-      console.error('Error submitting inquiry to Cloud Firestore:', error);
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+      console.error('[ContactForm] Error in submit handler:', error);
+
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      const errorMessage = isAbort
+        ? 'Request timed out. Please check your connection or email us directly at team.sitesprint@gmail.com'
+        : 'Something went wrong while submitting. Please try again or email us directly at team.sitesprint@gmail.com';
+
       setSubmitStatus({
         success: false,
-        message: 'Something went wrong while submitting. Please try again or email us directly at team.sitesprint@gmail.com',
+        message: errorMessage,
       });
     } finally {
+      console.log('[ContactForm] Stage 8: In finally block — resetting isSubmitting to false.');
       setIsSubmitting(false);
     }
   };
