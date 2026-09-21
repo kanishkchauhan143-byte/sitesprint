@@ -76,7 +76,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({ onSuccess }) => {
       clearTimeout(timeoutId);
       console.log('[ContactForm] Stage 5: Received response from /api/contact. HTTP status:', response.status, response.statusText);
 
-      let result: { success?: boolean; message?: string; errors?: ValidationErrors } = {};
+      let result: { success?: boolean; message?: string; errors?: ValidationErrors; docId?: string } = {};
       try {
         result = await response.json();
         console.log('[ContactForm] Stage 6: Successfully parsed response JSON:', result);
@@ -99,7 +99,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({ onSuccess }) => {
         return;
       }
 
-      console.log('[ContactForm] Stage 7: Submission succeeded! Updating UI and resetting form.');
+      console.log('[ContactForm] Stage 7: Submission succeeded! Created Firestore docId:', result.docId);
       setSubmitStatus({
         success: true,
         message:

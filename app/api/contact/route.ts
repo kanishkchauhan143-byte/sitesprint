@@ -1,7 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateContactForm, ContactFormData } from '@/lib/validation';
-import { db, isFirebaseConfigured } from '@/lib/firebase';
+import { getFirestoreDb, getFirebaseDiagnostics } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+export const dynamic = 'force-dynamic';
+
+// GET: Safe health check and configuration verification (no secrets exposed)
+export async function GET() {
+  const diagnostics = getFirebaseDiagnostics();
+  return NextResponse.json(
+    {
+      status: 'ok',
+      endpoint: '/api/contact',
+      timestamp: new Date().toISOString(),
+      firebase: {
+        isConfigured: diagnostics.isConfigured,
+        projectId: diagnostics.projectId, // Public identifier
+        hasApiKey: diagnostics.hasApiKey,
+        hasAuthDomain: diagnostics.hasAuthDomain,
+        hasStorageBucket: diagnostics.hasStorageBucket,
+        hasMessagingSenderId: diagnostics.hasMessagingSenderId,
+        hasAppId: diagnostics.hasAppId,
+        missingFields: diagnostics.missingFields,
+      },
+      email: {
+        hasResendKey: Boolean(process.env.RESEND_API_KEY),
+      },
+    },
+    { status: 200 }
+  );
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,6 +56,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Verify Firestore database instance
+    const { db, projectId, error: dbInitError } = getFirestoreDb();
+    if (!db) {
+      console.error('[SiteSprint API /contact] Firestore initialization failed:', dbInitError);
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            'Database service is currently unavailable. Please try again later or email us directly at team.sitesprint@gmail.com',
+          error: 'DATABASE_UNAVAILABLE',
+        },
+        { status: 503 }
+      );
+    }
+
     const leadPayload = {
       fullName: body.name.trim(),
       businessName: body.businessName.trim(),
@@ -41,41 +84,38 @@ export async function POST(req: NextRequest) {
       receivedAt: new Date().toISOString(),
     };
 
-    // Server-side audit logging: captures lead even if external services are down
-    console.log('[SiteSprint Project Inquiry Received]', {
-      timestamp: leadPayload.receivedAt,
+    console.log('[SiteSprint API /contact] Persisting lead to Firestore "inquiries" on project:', projectId, {
       fullName: leadPayload.fullName,
       businessName: leadPayload.businessName,
       email: leadPayload.email,
-      phone: leadPayload.phone || 'N/A',
-      businessType: leadPayload.businessType,
-      projectType: leadPayload.projectType,
-      websiteUrl: leadPayload.websiteUrl || 'N/A',
-      messagePreview: leadPayload.message ? `${leadPayload.message.slice(0, 80)}...` : 'N/A',
     });
 
-    // 1. Persist to Cloud Firestore if configured (with strict 5s timeout to prevent hanging)
-    let firestoreStored = false;
-    if (isFirebaseConfigured && db) {
-      try {
-        const firestorePromise = addDoc(collection(db, 'inquiries'), leadPayload);
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Firestore write timed out after 5000ms')), 5000)
-        );
+    // Write to Firestore collection "inquiries" with strict 7s timeout
+    let docId: string;
+    try {
+      const firestorePromise = addDoc(collection(db, 'inquiries'), leadPayload);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore write timed out after 7000ms')), 7000)
+      );
 
-        const docRef = await Promise.race([firestorePromise, timeoutPromise]);
-        firestoreStored = true;
-        console.log('[SiteSprint API /contact] Successfully persisted to Firestore:', docRef.id);
-      } catch (firestoreErr) {
-        console.error('[SiteSprint API /contact] Firestore save error or timeout:', firestoreErr);
-      }
-    } else {
-      console.warn(
-        '[SiteSprint API /contact] Firebase is not configured in this environment. Lead logged to server console.'
+      const docRef = await Promise.race([firestorePromise, timeoutPromise]);
+      docId = docRef.id;
+      console.log('[SiteSprint API /contact] Successfully persisted to Firestore "inquiries" with docId:', docId);
+    } catch (firestoreErr: unknown) {
+      const errMsg = firestoreErr instanceof Error ? firestoreErr.message : String(firestoreErr);
+      console.error('[SiteSprint API /contact] Firestore write failed:', errMsg);
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            'Unable to save your inquiry at this moment. Please try again or email us directly at team.sitesprint@gmail.com',
+          error: 'DATABASE_WRITE_FAILED',
+        },
+        { status: 500 }
       );
     }
 
-    // 2. Dispatch email notification via Resend REST API if RESEND_API_KEY is configured
+    // Optional email notification dispatch via Resend
     const resendApiKey = process.env.RESEND_API_KEY;
     if (resendApiKey) {
       try {
@@ -103,14 +143,14 @@ export async function POST(req: NextRequest) {
                 leadPayload.message || 'No additional notes provided.'
               }</p>
               <hr />
-              <p><small>Received at ${leadPayload.receivedAt} | Stored in DB: ${firestoreStored ? 'Yes' : 'No'}</small></p>
+              <p><small>Document ID: ${docId} | Received at ${leadPayload.receivedAt}</small></p>
             `,
           }),
           signal: AbortSignal.timeout(6000),
         });
 
         if (resendResponse.ok) {
-          console.log('[SiteSprint API /contact] Notification email dispatched successfully.');
+          console.log('[SiteSprint API /contact] Notification email dispatched.');
         } else {
           const errBody = await resendResponse.text();
           console.warn('[SiteSprint API /contact] Resend API responded with error:', resendResponse.status, errBody);
@@ -120,11 +160,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Return HTTP 200 ONLY after Firestore write has succeeded
     return NextResponse.json(
       {
         success: true,
         message: "Thanks — we've received your project details and will be in touch soon!",
-        stored: firestoreStored,
+        docId,
       },
       { status: 200 }
     );
