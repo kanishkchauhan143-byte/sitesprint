@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
+import { getAuth, Auth } from 'firebase/auth';
 
 export interface FirebaseDiagnostics {
   isConfigured: boolean;
@@ -62,5 +63,25 @@ export function getFirestoreDb(): { db: Firestore | null; projectId: string | nu
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error('[SiteSprint Firebase] Initialization error:', errorMsg);
     return { db: null, projectId: config.projectId, error: errorMsg };
+  }
+}
+
+export function getFirebaseAuth(): { auth: Auth | null; error?: string } {
+  const config = getFirebaseConfig();
+  if (!config.apiKey || !config.projectId) {
+    const diag = getFirebaseDiagnostics();
+    const errorMsg = `Firebase configuration incomplete. Missing fields: ${diag.missingFields.join(', ')}.`;
+    console.error('[SiteSprint Firebase Auth]', errorMsg);
+    return { auth: null, error: errorMsg };
+  }
+
+  try {
+    const app: FirebaseApp = !getApps().length ? initializeApp(config) : getApp();
+    const auth = getAuth(app);
+    return { auth };
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[SiteSprint Firebase Auth] Initialization error:', errorMsg);
+    return { auth: null, error: errorMsg };
   }
 }

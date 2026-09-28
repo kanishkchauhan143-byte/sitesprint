@@ -1,15 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Inquiries collection: Allow public creation of project inquiry leads
+    
+    // Authorization helper: Restricts access strictly to authorized SiteSprint owner/operator accounts
+    function isSiteSprintOwner() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && (
+          request.auth.token.email.lower() == 'team.sitesprint@gmail.com'
+          || request.auth.token.admin == true
+        );
+    }
+
+    // Inquiries collection: Lead generation & management
     match /inquiries/{inquiryId} {
+      // Public creation via SiteSprint Contact Form
       allow create: if request.resource.data.fullName is string
                     && request.resource.data.businessName is string
                     && request.resource.data.email is string
                     && request.resource.data.businessType is string
                     && request.resource.data.projectType is string
                     && request.resource.data.createdAt != null;
-      allow read, update, delete: if false; // Protect client privacy; view leads in Firebase Console or via Admin SDK
+
+      // Restrict read and updates strictly to the SiteSprint owner account
+      // Arbitrary authenticated users CANNOT view or modify leads
+      allow read, update: if isSiteSprintOwner();
+
+      // Prevent accidental data deletion
+      allow delete: if false;
     }
   }
 }

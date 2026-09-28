@@ -80,6 +80,8 @@ export async function POST(req: NextRequest) {
       projectType: body.need,
       websiteUrl: body.websiteUrl?.trim() || '',
       message: body.message?.trim() || '',
+      status: 'new',
+      notes: '',
       createdAt: serverTimestamp(),
       receivedAt: new Date().toISOString(),
     };

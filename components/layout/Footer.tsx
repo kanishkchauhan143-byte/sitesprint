@@ -12,9 +12,14 @@ export const Footer: React.FC = () => {
           <div className="flex flex-col gap-3">
             <a href="#" className="flex items-center gap-2.5 w-fit group">
               <LogoMark size="sm" />
-              <span className="font-heading font-semibold text-lg tracking-tight text-[var(--paper)]">
-                SiteSprint
-              </span>
+              <div className="flex flex-col">
+                <span className="font-heading font-semibold text-lg tracking-tight text-[var(--paper)] leading-tight">
+                  SiteSprint
+                </span>
+                <span className="text-[7.5px] font-semibold tracking-[0.2em] text-[var(--mist)] uppercase leading-none">
+                  Websites that work
+                </span>
+              </div>
             </a>
             <p className="text-xs text-[var(--mist)] max-w-xs leading-relaxed">
               {FOOTER_CONTENT.tagline}

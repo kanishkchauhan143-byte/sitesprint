@@ -127,9 +127,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
           className="flex items-center gap-2.5 group focus-visible:outline-none"
         >
           <LogoMark size="md" />
-          <span className="font-heading font-semibold text-xl tracking-tight text-[var(--paper)]">
-            SiteSprint
-          </span>
+          <div className="flex flex-col">
+            <span className="font-heading font-semibold text-xl tracking-tight text-[var(--paper)] leading-tight">
+              SiteSprint
+            </span>
+            <span className="text-[8px] font-semibold tracking-[0.2em] text-[var(--mist)] uppercase leading-none">
+              Websites that work
+            </span>
+          </div>
         </a>
 
         <motion.button

@@ -59,9 +59,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
             className="flex items-center gap-2.5 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--current-bright)] rounded-lg p-1 -ml-1"
           >
             <LogoMark size="md" />
-            <span className="font-heading font-semibold text-xl tracking-tight text-[var(--paper)]">
-              SiteSprint
-            </span>
+            <div className="flex flex-col">
+              <span className="font-heading font-semibold text-xl tracking-tight text-[var(--paper)] leading-tight">
+                SiteSprint
+              </span>
+              <span className="text-[8px] font-semibold tracking-[0.2em] text-[var(--mist)] uppercase leading-none">
+                Websites that work
+              </span>
+            </div>
           </a>
 
           {/* Desktop Nav Links */}
